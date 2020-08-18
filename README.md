@@ -14,7 +14,7 @@
 
 ![avatar](./img/script_img.png)
 
-5. 执行命令,选择环境，打包及部署
+5. 执行命令,选择部署环境，自动实现打包及部署
 ```bash
     运行 npm run deploy
 ```
