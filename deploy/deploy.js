@@ -9,7 +9,7 @@ const fs = require('fs') // nodejs内置文件模块
 const path = require('path') // nodejs内置路径模块
 const CONFIG = require('./config') // 配置
 
-const SSH = new node_ssh();
+const SSH = new node_ssh.NodeSSH();
 let config; // 用于保存 inquirer 命令行交互后选择正式|测试版的配置
 
 //logs
@@ -18,9 +18,8 @@ const errorLog = log => console.log(chalk.red(`---------------- ${log} ---------
 const successLog = log => console.log(chalk.green(`---------------- ${log} ----------------`));
 
 //文件夹目录
-const distDir = path.resolve(__dirname, '../dist'); //待打包
-const distZipPath = path.resolve(__dirname, `../dist.zip`); //打包后地址(dist.zip是文件名,不需要更改, 主要在config中配置 PATH 即可)
-
+let distDir,
+distZipPath;
 
 //项目打包代码 npm run build 
 const compileDist = async () => {
@@ -97,16 +96,16 @@ const uploadZipBySSH = async () =>{
   const loading = ora( defaultLog('准备上传文件') ).start();
   loading.spinner = spinner_style.arrow4;
   try {
-    await SSH.putFiles([{ local: distZipPath, remote: config.PATH + '/dist.zip' }]); //local 本地 ; remote 服务器 ;
+    await SSH.putFiles([{ local: distZipPath, remote: config.PATH + `/${config.buildDist}.zip` }]); //local 本地 ; remote 服务器 ;
     successLog('上传成功!'); 
     loading.text = '正在解压文件';
-    await runCommand('unzip ./dist.zip'); //解压
-    await runCommand(`rm -rf ${config.PATH}/dist.zip`); //解压完删除线上压缩包
+    await runCommand(`unzip ./${config.buildDist}.zip`); //解压
+    await runCommand(`rm -rf ${config.PATH}/${config.buildDist}.zip`); //解压完删除线上压缩包
     //将目标目录的dist里面文件移出到目标文件  
     //举个例子 假如我们部署在 /test/html 这个目录下 只有一个网站, 那么上传解压后的文件在 /test/html/dist 里
     //需要将 dist 目录下的文件 移出到 /test/html ;  多网站情况, 如 /test/html/h5  或者 /test/html/admin 都和上面同样道理
-    await runCommand(`mv -f ${config.PATH}/dist/*  ${config.PATH}`); 
-    await runCommand(`rm -rf ${config.PATH}/dist`); //移出后删除 dist 文件夹
+    await runCommand(`mv -f ${config.PATH}/${config.buildDist}/*  ${config.PATH}`); 
+    await runCommand(`rm -rf ${config.PATH}/${config.buildDist}`); //移出后删除 dist 文件夹
     SSH.dispose(); //断开连接
   } catch (error) {
     errorLog(error);
@@ -116,18 +115,42 @@ const uploadZipBySSH = async () =>{
   loading.stop();
 }
 
+// 本地操作
+class File {
+  
+  constructor(fileName) {
+    this.fileName = fileName;
+  }
 
+  // 删除本地文件
+  deleteLocalFile () {
+    return new Promise(() => {
+      fs.unlink(this.fileName, function (error){
+        if (error) {
+          errorLog(error)
+          errorLog('本地文件删除失败, 请手动删除!');
+          process.exit()
+        } else {
+          successLog('本地文件删除成功')
+        }
+      })
+    })
+  }
+
+}
 
 //------------发布程序---------------
 const runUploadTask = async () => {
-  console.log(chalk.yellow(`--------->  欢迎使用 波哥牌 2020年自动部署工具  <---------`));
+  console.log(chalk.yellow(`--------->  欢迎使用 自动部署工具  <---------`));
   //打包
   await compileDist();
   //压缩
   await zipDist();
   //连接服务器上传文件
   await uploadZipBySSH(); 
-  successLog('大吉大利, 部署成功!'); 
+  successLog('部署成功! 正在为您删除本地压缩包'); 
+  // 删除本地压缩包
+  await (new File(`${config.buildDist}.zip`)).deleteLocalFile()
   process.exit();
 }
 
@@ -167,6 +190,8 @@ inquirer
   }])
   .then(answers => {
     config = CONFIG[answers.env];
+    distDir = path.resolve(__dirname, `../${config.buildDist}`); //待打包
+    distZipPath = path.resolve(__dirname, `../${config.buildDist}.zip`); //打包后地址(dist.zip是文件名,不需要更改, 主要在config中配置 PATH 即可)
     checkConfig(config); // 检查
     runUploadTask(); // 发布
   });
